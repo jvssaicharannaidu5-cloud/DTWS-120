@@ -1,0 +1,1157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DTW-SOP | Digital Twin Well-Surface Optimization | Baghewala Field</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['IBM Plex Sans', 'system-ui', 'sans-serif'],
+            mono: ['IBM Plex Mono', 'ui-monospace', 'monospace']
+          },
+          colors: {
+            void: '#07090c',
+            panel: '#10151c',
+            inset: '#0c1016',
+            line: '#243040',
+            teal: { DEFAULT: '#2ee6c7', dim: '#1a8f7c' },
+            amberx: '#f5a623'
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    :root {
+      --void: #07090c;
+      --panel: #10151c;
+      --inset: #0b0f14;
+      --line: #243040;
+      --teal: #2ee6c7;
+      --cyan: #22d3ee;
+      --amber: #f5a623;
+      --ok: #34d399;
+      --crit: #f43f5e;
+      --warn: #fb923c;
+    }
+    * { box-sizing: border-box; }
+    html, body, #root { height: 100%; margin: 0; background: var(--void); }
+    body {
+      font-family: 'IBM Plex Sans', system-ui, sans-serif;
+      color: #d7dee8;
+      overflow: hidden;
+    }
+    #root:empty {
+      display: flex; align-items: center; justify-content: center;
+      color: #2ee6c7; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.18em;
+      font-size: 12px;
+    }
+    #root:empty::before { content: 'INITIALIZING DIGITAL TWIN  ·  BAGHEWALA SCADA BUS'; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #0b0f14; }
+    ::-webkit-scrollbar-thumb { background: #2a3a4c; border-radius: 4px; }
+    .panel {
+      background: linear-gradient(180deg, #121821 0%, #0e131a 100%);
+      border: 1px solid #243040;
+      border-radius: 6px;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.35);
+    }
+    .panel-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 10px;
+      border-bottom: 1px solid #243040;
+      background: rgba(8,12,18,0.65);
+    }
+    .panel-head h3 {
+      margin: 0; font-size: 10px; letter-spacing: 0.16em; font-weight: 600;
+      text-transform: uppercase; color: #8b9bb0;
+    }
+    .live-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #2ee6c7; box-shadow: 0 0 8px #2ee6c7;
+      animation: pulse 1.6s ease-in-out infinite;
+    }
+    .live-dot.amber { background: #f5a623; box-shadow: 0 0 8px #f5a623; }
+    .live-dot.red { background: #f43f5e; box-shadow: 0 0 8px #f43f5e; }
+    .live-dot.gray { background: #64748b; box-shadow: none; animation: none; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.45; transform: scale(0.85); }
+    }
+    @keyframes scan {
+      0% { transform: translateY(-100%); }
+      100% { transform: translateY(400%); }
+    }
+    .scanline::after {
+      content: ''; position: absolute; left: 0; right: 0; height: 40%;
+      background: linear-gradient(180deg, transparent, rgba(46,230,199,0.04), transparent);
+      animation: scan 7s linear infinite; pointer-events: none;
+    }
+    .kpi-val { font-variant-numeric: tabular-nums; }
+    .tag {
+      font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.08em;
+      padding: 1px 6px; border: 1px solid #243040; border-radius: 3px; color: #9aa8b8;
+    }
+    input[type='range'] {
+      -webkit-appearance: none; appearance: none; width: 100%; height: 4px;
+      background: #1c2734; border-radius: 2px; outline: none;
+    }
+    input[type='range']::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 12px; height: 12px; border-radius: 2px;
+      background: #2ee6c7; cursor: pointer; box-shadow: 0 0 8px rgba(46,230,199,0.6);
+    }
+    .well-card { transition: border-color 0.15s, background 0.15s; }
+    .well-card:hover { background: #151c26; }
+    .well-card.active {
+      border-color: #2ee6c7;
+      background: linear-gradient(90deg, rgba(46,230,199,0.08), transparent 40%);
+      box-shadow: inset 3px 0 0 #2ee6c7;
+    }
+    .toast {
+      animation: slideIn 0.25s ease-out;
+    }
+    @keyframes slideIn {
+      from { transform: translateX(16px); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    .flow-pipe { stroke-dasharray: 6 8; animation: dash 1.2s linear infinite; }
+    @keyframes dash { to { stroke-dashoffset: -28; } }
+    .steam-pipe { stroke-dasharray: 4 10; animation: dash 1.8s linear infinite; }
+    canvas.twin-canvas { display: block; width: 100%; height: 100%; }
+    .label-chip {
+      position: absolute; pointer-events: none;
+      background: rgba(8,12,18,0.88); border: 1px solid #2ee6c7;
+      color: #c9f7ee; font-family: 'IBM Plex Mono', monospace;
+      font-size: 9px; padding: 3px 6px; border-radius: 3px; white-space: nowrap;
+      transform: translate(-50%, -120%);
+    }
+    .label-chip span { color: #2ee6c7; }
+    .grid-bg {
+      background-image:
+        linear-gradient(rgba(36,48,64,0.35) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(36,48,64,0.35) 1px, transparent 1px);
+      background-size: 20px 20px;
+    }
+    .pid-svg text { font-family: 'IBM Plex Mono', monospace; }
+    .hide-scroll { scrollbar-width: thin; }
+    @media (max-width: 1279px) {
+      body { overflow: auto; }
+      .dash-shell { height: auto !important; min-height: 100vh; overflow: visible !important; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+    const STATUS = {
+      active: { label: 'ACTIVE', color: '#34d399', bg: 'rgba(52,211,153,0.12)', cls: 'text-emerald-400' },
+      optimizing: { label: 'OPTIMIZING', color: '#22d3ee', bg: 'rgba(34,211,238,0.12)', cls: 'text-cyan-400' },
+      purging: { label: 'PURGING', color: '#f5a623', bg: 'rgba(245,166,35,0.12)', cls: 'text-amber-400' },
+      critical: { label: 'CRITICAL', color: '#f43f5e', bg: 'rgba(244,63,94,0.14)', cls: 'text-rose-400' },
+      offline: { label: 'OFFLINE', color: '#64748b', bg: 'rgba(100,116,139,0.12)', cls: 'text-slate-400' }
+    };
+
+    const FIELD = {
+      name: 'Baghewala Field',
+      block: 'RJ-ON-90/1',
+      basin: 'Bikaner–Nagaur, Rajasthan',
+      operator: 'Cairn Oil & Gas / Vedanta',
+      wells: 12,
+      pads: 4,
+      target: 2100
+    };
+
+    function jitter(n, amp) { return n + (Math.random() - 0.5) * amp; }
+    function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
+    function fmt(n, d = 1) { return Number(n).toFixed(d); }
+    function spark(seed, n = 18) {
+      const a = [];
+      let v = 40 + (seed % 30);
+      for (let i = 0; i < n; i++) {
+        v = clamp(v + Math.sin(i / 2 + seed) * 4 + (Math.random() - 0.5) * 6, 8, 92);
+        a.push(v);
+      }
+      return a;
+    }
+
+    const INITIAL_WELLS = [
+      { id: 'BGW-001', pad: 'PAD-A', status: 'active', pumpEff: 82.1, rate: 168.4, thp: 312, chp: 96, temp: 89, wc: 28, spm: 6.4, stroke: 144, steam: 0, cycle: 'PRODUCE', day: 22, fillage: 91, api: 16.2, alerts: 0, spark: spark(1), x: 22, y: 38 },
+      { id: 'BGW-002', pad: 'PAD-A', status: 'optimizing', pumpEff: 76.8, rate: 151.2, thp: 348, chp: 110, temp: 94, wc: 31, spm: 6.1, stroke: 144, steam: 0, cycle: 'PRODUCE', day: 14, fillage: 84, api: 15.8, alerts: 1, spark: spark(2), x: 34, y: 30 },
+      { id: 'BGW-003', pad: 'PAD-A', status: 'active', pumpEff: 84.6, rate: 177.0, thp: 298, chp: 88, temp: 86, wc: 24, spm: 6.8, stroke: 144, steam: 0, cycle: 'PRODUCE', day: 31, fillage: 93, api: 16.5, alerts: 0, spark: spark(3), x: 40, y: 46 },
+      { id: 'BGW-004', pad: 'PAD-B', status: 'optimizing', pumpEff: 78.4, rate: 142.6, thp: 356, chp: 124, temp: 97, wc: 34, spm: 6.2, stroke: 144, steam: 0, cycle: 'PRODUCE', day: 18, fillage: 81, api: 15.4, alerts: 1, spark: spark(4), x: 52, y: 28 },
+      { id: 'BGW-005', pad: 'PAD-B', status: 'purging', pumpEff: 41.2, rate: 22.0, thp: 410, chp: 188, temp: 142, wc: 12, spm: 0, stroke: 144, steam: 1840, cycle: 'INJECT', day: 4, fillage: 0, api: 15.1, alerts: 0, spark: spark(5), x: 58, y: 42 },
+      { id: 'BGW-006', pad: 'PAD-B', status: 'critical', pumpEff: 38.7, rate: 41.3, thp: 92, chp: 54, temp: 71, wc: 62, spm: 7.4, stroke: 144, steam: 0, cycle: 'PRODUCE', day: 46, fillage: 44, api: 14.8, alerts: 3, spark: spark(6), x: 64, y: 58 },
+      { id: 'BGW-007', pad: 'PAD-C', status: 'active', pumpEff: 80.9, rate: 159.8, thp: 328, chp: 102, temp: 91, wc: 29, spm: 6.5, stroke: 144, steam: 0, cycle: 'PRODUCE', day: 11, fillage: 88, api: 16.0, alerts: 0, spark: spark(7), x: 70, y: 34 },
+      { id: 'BGW-008', pad: 'PAD-C', status: 'offline', pumpEff: 0, rate: 0, thp: 14, chp: 12, temp: 38, wc: 0, spm: 0, stroke: 144, steam: 0, cycle: 'SHUT-IN', day: 3, fillage: 0, api: 15.6, alerts: 1, spark: spark(8), x: 78, y: 50 },
+      { id: 'BGW-009', pad: 'PAD-C', status: 'active', pumpEff: 86.2, rate: 188.5, thp: 286, chp: 84, temp: 88, wc: 21, spm: 7.0, stroke: 144, steam: 0, cycle: 'PRODUCE', day: 9, fillage: 95, api: 16.8, alerts: 0, spark: spark(9), x: 46, y: 62 },
+      { id: 'BGW-010', pad: 'PAD-D', status: 'optimizing', pumpEff: 73.5, rate: 134.1, thp: 372, chp: 140, temp: 101, wc: 38, spm: 5.8, stroke: 120, steam: 0, cycle: 'PRODUCE', day: 27, fillage: 76, api: 15.2, alerts: 2, spark: spark(10), x: 28, y: 66 },
+      { id: 'BGW-011', pad: 'PAD-D', status: 'active', pumpEff: 81.7, rate: 162.3, thp: 318, chp: 99, temp: 90, wc: 26, spm: 6.6, stroke: 144, steam: 0, cycle: 'PRODUCE', day: 16, fillage: 90, api: 16.1, alerts: 0, spark: spark(11), x: 18, y: 52 },
+      { id: 'BGW-012', pad: 'PAD-D', status: 'purging', pumpEff: 12.4, rate: 8.2, thp: 62, chp: 48, temp: 168, wc: 8, spm: 0, stroke: 144, steam: 0, cycle: 'SOAK', day: 2, fillage: 0, api: 15.0, alerts: 0, spark: spark(12), x: 84, y: 40 }
+    ];
+
+    const INIT_EVENTS = [
+      { t: '14:31:02', sev: 'info', msg: 'BGW-004 PCP VFD setpoint accepted — 41.2 Hz' },
+      { t: '14:28:44', sev: 'warn', msg: 'BGW-010 pump fillage trending down 76% → 74%' },
+      { t: '14:22:18', sev: 'ok', msg: 'CSS cycle BGW-005 injection ramp complete — 1,840 CWE bbl/d' },
+      { t: '14:17:55', sev: 'crit', msg: 'BGW-006 rod load excursion +18% vs baseline — dyno card flagged' },
+      { t: '14:11:09', sev: 'info', msg: 'Historian catch-up OK · 2,448 tags reconciled' },
+      { t: '14:04:33', sev: 'ok', msg: 'Steam header pressure stable 1,142 psig ±6' },
+      { t: '13:58:21', sev: 'warn', msg: 'BGW-002 THP climbing — choke review recommended' },
+      { t: '13:49:10', sev: 'info', msg: 'OPC-UA session renewed · RTU-B pad gateway' }
+    ];
+
+    const INIT_AI = [
+      { id: 1, sev: 'HIGH', conf: 93, well: 'BGW-006', title: 'Incomplete pump fillage / gas lock signature', detail: 'Dynamometer shows fluid pound after 62% of downstroke. Predicted tubing intake pressure collapse. Risk of rod fatigue within 36–48 h.', ts: '14:17:51' },
+      { id: 2, sev: 'MED', conf: 86, well: 'BGW-004', title: 'SPM under-optimized vs inflow capacity', detail: 'IPR vs TPC mismatch. Increasing SPM 6.2 → 6.8 expected +8.4 bbl/d with fillage remaining >78%.', ts: '14:12:08' },
+      { id: 3, sev: 'MED', conf: 81, well: 'BGW-010', title: 'Steam-oil ratio drift — early CSS recall', detail: 'Cycle day 27 production decline 4.1%/d. Recommend terminate produce phase and queue inject in 48 h.', ts: '14:02:40' },
+      { id: 4, sev: 'LOW', conf: 74, well: 'BGW-002', title: 'THP / choke interaction', detail: 'Surface choke 22/64 may be restricting. Model suggests 26/64 reduces THP 28 psi, +3.2 bbl/d.', ts: '13:51:19' }
+    ];
+
+    const CSS_STAGES = [
+      { well: 'BGW-005', stage: 'INJECT', start: 'Day 0', end: 'Day 6', progress: 0.66, color: '#fb923c' },
+      { well: 'BGW-012', stage: 'SOAK', start: 'Day 6', end: 'Day 10', progress: 0.45, color: '#f5a623' },
+      { well: 'BGW-004', stage: 'PRODUCE', start: 'Day 10', end: 'Day 40', progress: 0.45, color: '#2ee6c7' },
+      { well: 'BGW-006', stage: 'PRODUCE', start: 'Day 10', end: 'Day 40', progress: 0.92, color: '#f43f5e' },
+      { well: 'BGW-010', stage: 'PRODUCE', start: 'Day 10', end: 'Day 40', progress: 0.68, color: '#22d3ee' },
+      { well: 'BGW-001', stage: 'PRODUCE', start: 'Day 10', end: 'Day 40', progress: 0.55, color: '#34d399' }
+    ];
+
+    function Icon({ d, size = 16, className = '' }) {
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className={className}>
+          <path d={d} />
+        </svg>
+      );
+    }
+
+    function Sparkline({ data, color = '#2ee6c7', w = 72, h = 22 }) {
+      const max = Math.max(...data), min = Math.min(...data);
+      const pts = data.map((v, i) => {
+        const x = (i / (data.length - 1)) * w;
+        const y = h - ((v - min) / (max - min || 1)) * (h - 2) - 1;
+        return `${x},${y}`;
+      }).join(' ');
+      return (
+        <svg width={w} height={h} className="block">
+          <polyline fill="none" stroke={color} strokeWidth="1.4" points={pts} />
+        </svg>
+      );
+    }
+
+    function LineChart({ series, labels, height = 150, colors }) {
+      const w = 640, h = height, pad = { l: 36, r: 10, t: 12, b: 22 };
+      const all = series.flatMap(s => s.data);
+      const max = Math.max(...all) * 1.08;
+      const min = Math.min(0, Math.min(...all));
+      const iw = w - pad.l - pad.r, ih = h - pad.t - pad.b;
+      const x = i => pad.l + (i / (labels.length - 1)) * iw;
+      const y = v => pad.t + ih - ((v - min) / (max - min || 1)) * ih;
+      const grid = [0, 0.25, 0.5, 0.75, 1];
+      return (
+        <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-full">
+          {grid.map((g, i) => (
+            <g key={i}>
+              <line x1={pad.l} x2={w - pad.r} y1={pad.t + ih * (1 - g)} y2={pad.t + ih * (1 - g)} stroke="#243040" strokeWidth="1" />
+              <text x={pad.l - 6} y={pad.t + ih * (1 - g) + 3} textAnchor="end" fill="#6b7c90" fontSize="9" fontFamily="IBM Plex Mono">{fmt(min + (max - min) * g, 0)}</text>
+            </g>
+          ))}
+          {series.map((s, si) => {
+            const d = s.data.map((v, i) => `${i === 0 ? 'M' : 'L'}${x(i)},${y(v)}`).join(' ');
+            const area = `${d} L${x(s.data.length - 1)},${y(0)} L${x(0)},${y(0)} Z`;
+            return (
+              <g key={si}>
+                {s.fill && <path d={area} fill={colors[si]} opacity="0.12" />}
+                <path d={d} fill="none" stroke={colors[si]} strokeWidth="1.6" />
+              </g>
+            );
+          })}
+          {labels.map((lb, i) => i % 3 === 0 ? (
+            <text key={i} x={x(i)} y={h - 6} textAnchor="middle" fill="#6b7c90" fontSize="9" fontFamily="IBM Plex Mono">{lb}</text>
+          ) : null)}
+        </svg>
+      );
+    }
+
+    function DynoCard({ well }) {
+      const pts = useMemo(() => {
+        const a = [];
+        const fill = (well.fillage || 80) / 100;
+        for (let i = 0; i <= 80; i++) {
+          const t = i / 80;
+          const pos = t * 144;
+          let load;
+          if (t < 0.5) {
+            const u = t / 0.5;
+            load = 8.2 + 14 * Math.min(1, u / 0.18) - (u > fill ? 9 * ((u - fill) / (1 - fill + 0.01)) : 0);
+          } else {
+            const u = (t - 0.5) / 0.5;
+            load = 6.4 - 2.8 * u + Math.sin(u * 8) * 0.25;
+          }
+          if (well.status === 'critical') load += Math.sin(t * 40) * 1.8;
+          a.push([pos, load]);
+        }
+        return a;
+      }, [well]);
+      const w = 420, h = 168, pad = { l: 40, r: 12, t: 12, b: 24 };
+      const maxL = 26, minL = 0;
+      const x = p => pad.l + (p / 144) * (w - pad.l - pad.r);
+      const y = l => pad.t + (1 - (l - minL) / (maxL - minL)) * (h - pad.t - pad.b);
+      const d = pts.map((p, i) => `${i ? 'L' : 'M'}${x(p[0])},${y(p[1])}`).join(' ') + ' Z';
+      return (
+        <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-full">
+          {[0, 0.25, 0.5, 0.75, 1].map((g, i) => (
+            <g key={i}>
+              <line x1={pad.l} x2={w - pad.r} y1={pad.t + (h - pad.t - pad.b) * (1 - g)} y2={pad.t + (h - pad.t - pad.b) * (1 - g)} stroke="#243040" />
+              <text x={pad.l - 6} y={pad.t + (h - pad.t - pad.b) * (1 - g) + 3} textAnchor="end" fill="#6b7c90" fontSize="9" fontFamily="IBM Plex Mono">{fmt(minL + (maxL - minL) * g, 0)}</text>
+            </g>
+          ))}
+          <path d={d} fill="rgba(46,230,199,0.08)" stroke="#2ee6c7" strokeWidth="1.5" />
+          <text x={w / 2} y={h - 4} textAnchor="middle" fill="#6b7c90" fontSize="9" fontFamily="IBM Plex Mono">POSITION (in) · SURFACE DYNAMOMETER</text>
+          <text x={12} y={14} fill="#6b7c90" fontSize="9" fontFamily="IBM Plex Mono" transform="rotate(-90 12 80)">LOAD (klbf)</text>
+        </svg>
+      );
+    }
+
+    function DigitalTwin({ well, view, onReady }) {
+      const wrapRef = useRef(null);
+      const labelsRef = useRef(null);
+      const wellRef = useRef(well);
+      wellRef.current = well;
+
+      useEffect(() => {
+        if (view !== '3d' || !wrapRef.current || typeof THREE === 'undefined') return;
+        const el = wrapRef.current;
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a1016);
+        scene.fog = new THREE.Fog(0x0a1016, 28, 90);
+
+        const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
+        camera.position.set(14, 10, 16);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        el.appendChild(renderer.domElement);
+        renderer.domElement.className = 'twin-canvas';
+
+        const hemi = new THREE.HemisphereLight(0x9bb8c9, 0x3a2a18, 0.55);
+        scene.add(hemi);
+        const sun = new THREE.DirectionalLight(0xffe6c2, 0.85);
+        sun.position.set(20, 30, 10);
+        sun.castShadow = true;
+        scene.add(sun);
+        const teal = new THREE.PointLight(0x2ee6c7, 1.4, 28);
+        teal.position.set(2, 4, 2);
+        scene.add(teal);
+        const amber = new THREE.PointLight(0xf5a623, 1.1, 22);
+        amber.position.set(-4, 3, -2);
+        scene.add(amber);
+
+        const ground = new THREE.Mesh(
+          new THREE.CircleGeometry(40, 48),
+          new THREE.MeshStandardMaterial({ color: 0x2a241c, roughness: 0.95, metalness: 0.05 })
+        );
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        const grid = new THREE.GridHelper(40, 40, 0x3a4a3a, 0x243018);
+        grid.position.y = 0.02;
+        scene.add(grid);
+
+        const pad = new THREE.Mesh(
+          new THREE.BoxGeometry(16, 0.18, 12),
+          new THREE.MeshStandardMaterial({ color: 0x4a4e52, roughness: 0.8 })
+        );
+        pad.position.y = 0.1;
+        scene.add(pad);
+
+        const matSteel = new THREE.MeshStandardMaterial({ color: 0x8a93a0, metalness: 0.72, roughness: 0.32 });
+        const matDark = new THREE.MeshStandardMaterial({ color: 0x2c333c, metalness: 0.5, roughness: 0.4 });
+        const matTeal = new THREE.MeshStandardMaterial({ color: 0x1a6b62, emissive: 0x0b3, emissiveIntensity: 0.35, metalness: 0.4, roughness: 0.4 });
+        const matSteam = new THREE.MeshStandardMaterial({ color: 0x8a4a20, emissive: 0xf5a623, emissiveIntensity: 0.25, metalness: 0.3, roughness: 0.5 });
+        const matWarn = new THREE.MeshStandardMaterial({ color: 0xcc3344, emissive: 0xf43f5e, emissiveIntensity: 0.4 });
+
+        function cyl(r, h, mat, x, y, z, rx = 0, rz = 0) {
+          const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 16), mat);
+          m.position.set(x, y, z);
+          m.rotation.x = rx; m.rotation.z = rz;
+          m.castShadow = true;
+          scene.add(m);
+          return m;
+        }
+        function box(w, h, d, mat, x, y, z) {
+          const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+          m.position.set(x, y, z);
+          m.castShadow = true;
+          scene.add(m);
+          return m;
+        }
+
+        box(3.2, 0.5, 3.2, matDark, 0, 0.4, 0);
+        cyl(0.55, 1.2, matSteel, 0, 1.1, 0);
+        cyl(0.35, 1.6, matSteel, 0, 2.4, 0);
+        box(1.4, 0.55, 0.55, matSteel, 0, 3.3, 0);
+        cyl(0.22, 0.7, matDark, -0.7, 3.3, 0, 0, Math.PI / 2);
+        cyl(0.22, 0.7, matDark, 0.7, 3.3, 0, 0, Math.PI / 2);
+        cyl(0.18, 0.9, matSteel, 0, 3.9, 0);
+        box(0.7, 0.35, 0.7, matTeal, 0, 4.4, 0);
+
+        const jack = new THREE.Group();
+        jack.position.set(4.2, 0, 0);
+        scene.add(jack);
+        box(2.4, 0.35, 1.4, matDark, 4.2, 0.35, 0);
+        const samson = box(0.28, 4.2, 0.28, matSteel, 4.2, 2.4, 0);
+        const beam = box(6.2, 0.22, 0.28, matSteel, 3.2, 4.55, 0);
+        const horse = box(0.6, 0.8, 0.22, matDark, 0.35, 4.35, 0);
+        const crankArm = new THREE.Group();
+        crankArm.position.set(6.6, 1.1, 0.7);
+        scene.add(crankArm);
+        const crank = box(0.18, 1.8, 0.18, matSteel, 6.6, 1.8, 0.7);
+        cyl(0.55, 0.3, matDark, 6.6, 1.1, 0.7, Math.PI / 2);
+        const polish = cyl(0.07, 3.6, matTeal, 0, 2.2, 0);
+
+        const flow = [];
+        for (let i = 0; i < 18; i++) {
+          const p = new THREE.Mesh(
+            new THREE.SphereGeometry(0.07, 8, 8),
+            new THREE.MeshBasicMaterial({ color: 0x2ee6c7 })
+          );
+          scene.add(p);
+          flow.push(p);
+        }
+        const steamP = [];
+        for (let i = 0; i < 10; i++) {
+          const p = new THREE.Mesh(
+            new THREE.SphereGeometry(0.08, 8, 8),
+            new THREE.MeshBasicMaterial({ color: 0xf5a623 })
+          );
+          scene.add(p);
+          steamP.push(p);
+        }
+
+        box(1.6, 1.8, 1.1, matDark, -5.4, 1.1, 2.2);
+        const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), matWarn);
+        beacon.position.set(-5.4, 2.15, 2.2);
+        scene.add(beacon);
+
+        cyl(0.16, 6.5, matTeal, 2.2, 1.35, 1.6, 0, Math.PI / 2);
+        cyl(0.16, 5.5, matSteam, -2.4, 1.55, -1.4, 0, Math.PI / 2);
+
+        box(2.2, 1.4, 1.4, matSteel, -6.2, 0.9, -2.4);
+
+        const anchors = {
+          wellhead: new THREE.Vector3(0, 4.6, 0),
+          pump: new THREE.Vector3(4.2, 5.1, 0),
+          steam: new THREE.Vector3(-4.5, 2.2, -1.4),
+          flow: new THREE.Vector3(3.5, 1.8, 1.6),
+          rtu: new THREE.Vector3(-5.4, 2.6, 2.2)
+        };
+
+        let mx = 0, my = 0, dragging = false, ax = 0.42, ay = 0.38, dist = 22;
+        const onDown = e => { dragging = true; mx = e.clientX; my = e.clientY; };
+        const onUp = () => { dragging = false; };
+        const onMove = e => {
+          if (!dragging) return;
+          ax -= (e.clientX - mx) * 0.005;
+          ay = clamp(ay + (e.clientY - my) * 0.005, 0.12, 1.2);
+          mx = e.clientX; my = e.clientY;
+        };
+        const onWheel = e => { e.preventDefault(); dist = clamp(dist + e.deltaY * 0.02, 10, 40); };
+        el.addEventListener('pointerdown', onDown);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointermove', onMove);
+        el.addEventListener('wheel', onWheel, { passive: false });
+
+        const labelEls = {};
+        const labRoot = labelsRef.current;
+        ['wellhead', 'pump', 'steam', 'flow', 'rtu'].forEach(k => {
+          const d = document.createElement('div');
+          d.className = 'label-chip';
+          labRoot.appendChild(d);
+          labelEls[k] = d;
+        });
+
+        const clock = new THREE.Clock();
+        let raf;
+        const resize = () => {
+          const w = el.clientWidth, h = el.clientHeight || 320;
+          camera.aspect = w / Math.max(h, 1);
+          camera.updateProjectionMatrix();
+          renderer.setSize(w, h, false);
+        };
+        const ro = new ResizeObserver(resize);
+        ro.observe(el);
+        resize();
+
+        const animate = () => {
+          raf = requestAnimationFrame(animate);
+          const t = clock.getElapsedTime();
+          const wdat = wellRef.current;
+          const spm = wdat.spm || 0;
+          const nod = Math.sin(t * (spm * 0.45 + 0.4)) * 0.22;
+          beam.rotation.z = nod;
+          beam.position.y = 4.55 + Math.sin(t * 2) * 0.02;
+          horse.position.y = 4.35 + nod * 4;
+          polish.position.y = 2.2 + nod * 1.6;
+          crank.rotation.z = t * (spm * 0.6 + 0.5);
+          beacon.material.emissiveIntensity = 0.4 + Math.sin(t * 6) * 0.4;
+          teal.intensity = 1.1 + Math.sin(t * 2) * 0.3;
+
+          flow.forEach((p, i) => {
+            const u = (t * 0.35 + i / 18) % 1;
+            p.position.set(-1 + u * 8, 1.35 + Math.sin(u * 6) * 0.05, 1.6);
+            p.visible = wdat.rate > 1;
+          });
+          steamP.forEach((p, i) => {
+            const u = (t * 0.25 + i / 10) % 1;
+            p.position.set(-5 + u * 5, 1.55 + Math.sin(u * 8) * 0.08, -1.4);
+            p.visible = wdat.steam > 10 || wdat.cycle === 'INJECT';
+          });
+
+          camera.position.x = Math.cos(ax) * dist * Math.cos(ay);
+          camera.position.z = Math.sin(ax) * dist * Math.cos(ay);
+          camera.position.y = 4 + Math.sin(ay) * dist;
+          camera.lookAt(1.5, 2.2, 0);
+
+          renderer.render(scene, camera);
+
+          const rect = el.getBoundingClientRect();
+          Object.entries(anchors).forEach(([k, vec]) => {
+            const v = vec.clone().project(camera);
+            const x = (v.x * 0.5 + 0.5) * rect.width;
+            const y = (-v.y * 0.5 + 0.5) * rect.height;
+            const eln = labelEls[k];
+            if (!eln) return;
+            if (v.z > 1) { eln.style.display = 'none'; return; }
+            eln.style.display = 'block';
+            eln.style.left = x + 'px';
+            eln.style.top = y + 'px';
+          });
+          labelEls.wellhead.innerHTML = `X-TREE <span>${wdat.id}</span> · THP ${fmt(wdat.thp, 0)} psi`;
+          labelEls.pump.innerHTML = `BEAM PUMP · ${fmt(wdat.spm, 1)} SPM · η ${fmt(wdat.pumpEff, 0)}%`;
+          labelEls.steam.innerHTML = `STEAM HDR · ${wdat.steam > 0 ? fmt(wdat.steam, 0) + ' CWE bbl/d' : wdat.cycle}`;
+          labelEls.flow.innerHTML = `FLOWLINE 3" · ${fmt(wdat.rate, 1)} bbl/d`;
+          labelEls.rtu.innerHTML = `RTU / SCADA · LIVE`;
+        };
+        animate();
+        if (onReady) onReady();
+
+        return () => {
+          cancelAnimationFrame(raf);
+          ro.disconnect();
+          el.removeEventListener('pointerdown', onDown);
+          window.removeEventListener('pointerup', onUp);
+          window.removeEventListener('pointermove', onMove);
+          el.removeEventListener('wheel', onWheel);
+          renderer.dispose();
+          if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+          labRoot.innerHTML = '';
+        };
+      }, [view]);
+
+      return (
+        <div className="relative w-full h-full min-h-[280px] bg-[#0a1016] overflow-hidden">
+          {view === '3d' ? (
+            <>
+              <div ref={wrapRef} className="absolute inset-0" />
+              <div ref={labelsRef} className="absolute inset-0 pointer-events-none" />
+            </>
+          ) : (
+            <Schematic well={well} />
+          )}
+          <div className="absolute left-2 bottom-2 text-[9px] font-mono text-slate-500 pointer-events-none">
+            BAGHEWALA · SURFACE TWIN · {well.pad} · {well.id} · DRAG ORBIT · SCROLL ZOOM
+          </div>
+        </div>
+      );
+    }
+
+    function Schematic({ well }) {
+      const steamOn = well.steam > 10 || well.cycle === 'INJECT';
+      return (
+        <svg viewBox="0 0 900 420" className="w-full h-full pid-svg">
+          <rect width="900" height="420" fill="#0a1016" />
+          <g stroke="#243040" strokeWidth="1">
+            {Array.from({ length: 18 }).map((_, i) => <line key={'h'+i} x1="0" y1={i * 24} x2="900" y2={i * 24} />)}
+            {Array.from({ length: 38 }).map((_, i) => <line key={'v'+i} x1={i * 24} y1="0" x2={i * 24} y2="420" />)}
+          </g>
+          <text x="16" y="22" fill="#6b7c90" fontSize="10">P&amp;ID  ·  WELL SURFACE  ·  {well.id}  ·  REV 4.2  ·  ISA-5.1</text>
+
+          <g transform="translate(80,70)">
+            <rect x="0" y="0" width="110" height="70" fill="#121821" stroke="#f5a623" />
+            <text x="8" y="16" fill="#f5a623" fontSize="9">STEAM GEN</text>
+            <text x="8" y="32" fill="#9aa8b8" fontSize="9">H-1200</text>
+            <text x="8" y="48" fill="#f5a623" fontSize="10">{steamOn ? fmt(well.steam || 1840, 0) : '0'} CWE</text>
+            <text x="8" y="62" fill="#9aa8b8" fontSize="8">450°F  ·  1,142 psig</text>
+          </g>
+          <path d="M190 105 H280" fill="none" stroke="#f5a623" strokeWidth="3" className={steamOn ? 'steam-pipe' : ''} />
+          <polygon points="280,100 292,105 280,110" fill="#f5a623" />
+
+          <g transform="translate(300,78)">
+            <circle cx="18" cy="27" r="16" fill="none" stroke="#f5a623" strokeWidth="2" />
+            <line x1="8" y1="27" x2="28" y2="27" stroke="#f5a623" />
+            <text x="0" y="58" fill="#f5a623" fontSize="8">FV-STEAM</text>
+          </g>
+          <path d="M336 105 H410" fill="none" stroke="#f5a623" strokeWidth="3" className={steamOn ? 'steam-pipe' : ''} />
+
+          <g transform="translate(420,40)">
+            <rect x="40" y="0" width="70" height="22" fill="#1a2430" stroke="#8b9bb0" />
+            <text x="48" y="15" fill="#c5d0dc" fontSize="9">CASING 7"</text>
+            <rect x="58" y="22" width="34" height="150" fill="#151c26" stroke="#8b9bb0" />
+            <rect x="66" y="30" width="18" height="200" fill="#0e141c" stroke="#2ee6c7" />
+            <rect x="52" y="70" width="46" height="14" fill="#2a3340" stroke="#8b9bb0" />
+            <text x="104" y="80" fill="#8b9bb0" fontSize="8">TUBING 2-7/8"</text>
+            <rect x="48" y="52" width="54" height="10" fill="#2ee6c7" opacity="0.35" />
+            <text x="108" y="60" fill="#2ee6c7" fontSize="8">X-TREE / MASTER</text>
+            <circle cx="75" cy="57" r="5" fill="#2ee6c7" />
+            <rect x="70" y="40" width="10" height="12" fill="#8a93a0" />
+            <text x="108" y="44" fill="#9aa8b8" fontSize="8">SWAB VALVE</text>
+            <rect x="62" y="168" width="26" height="8" fill="#3a4555" />
+            <text x="108" y="176" fill="#6b7c90" fontSize="8">PACKER  812 m MD</text>
+            <rect x="66" y="200" width="18" height="28" fill="none" stroke="#fb923c" strokeDasharray="3 2" />
+            <text x="108" y="218" fill="#fb923c" fontSize="8">PERFS 812–856 m</text>
+          </g>
+
+          <path d="M495 95 H620" fill="none" stroke="#2ee6c7" strokeWidth="3" className="flow-pipe" />
+          <polygon points="620,90 632,95 620,100" fill="#2ee6c7" />
+
+          <g transform="translate(640,70)">
+            <circle cx="20" cy="25" r="18" fill="none" stroke="#2ee6c7" strokeWidth="2" />
+            <line x1="8" y1="25" x2="32" y2="25" stroke="#2ee6c7" />
+            <line x1="20" y1="13" x2="20" y2="37" stroke="#2ee6c7" />
+            <text x="0" y="58" fill="#2ee6c7" fontSize="8">CHOKE {well.status === 'critical' ? '18' : '24'}/64"</text>
+          </g>
+          <path d="M680 95 H760" fill="none" stroke="#2ee6c7" strokeWidth="3" className="flow-pipe" />
+
+          <g transform="translate(760,58)">
+            <rect x="0" y="0" width="120" height="80" rx="2" fill="#121821" stroke="#2ee6c7" />
+            <text x="10" y="18" fill="#2ee6c7" fontSize="9">TEST SEPARATOR</text>
+            <text x="10" y="36" fill="#9aa8b8" fontSize="9">V-310  ·  3-PHASE</text>
+            <text x="10" y="52" fill="#d7dee8" fontSize="10">{fmt(well.rate, 1)} bbl/d oil</text>
+            <text x="10" y="68" fill="#9aa8b8" fontSize="8">WC {fmt(well.wc, 0)}%  ·  {fmt(well.temp, 0)}°C</text>
+          </g>
+
+          <g transform="translate(250,250)">
+            <rect x="0" y="20" width="90" height="50" fill="#1a222c" stroke="#8b9bb0" />
+            <polygon points="20,20 70,20 78,0 12,0" fill="#2c333c" stroke="#8b9bb0" />
+            <line x1="45" y1="0" x2="45" y2="-40" stroke="#8b9bb0" strokeWidth="3" />
+            <line x1="45" y1="-40" x2="140" y2="-48" stroke="#8b9bb0" strokeWidth="4" />
+            <path d="M12,-48 Q0,-20 12,8" fill="none" stroke="#8b9bb0" strokeWidth="3" />
+            <line x1="12" y1="8" x2="12" y2="70" stroke="#2ee6c7" strokeWidth="2" />
+            <text x="0" y="88" fill="#9aa8b8" fontSize="8">MARK II UNIT  ·  {fmt(well.spm, 1)} SPM</text>
+            <text x="0" y="102" fill="#2ee6c7" fontSize="8">η {fmt(well.pumpEff, 1)}%  ·  FILL {fmt(well.fillage, 0)}%</text>
+          </g>
+
+          <g transform="translate(430,300)">
+            <rect x="0" y="0" width="160" height="72" fill="#121821" stroke="#22d3ee" />
+            <text x="8" y="16" fill="#22d3ee" fontSize="9">PIT-004 THP</text>
+            <text x="8" y="36" fill="#e8eef4" fontSize="16" fontFamily="IBM Plex Mono">{fmt(well.thp, 0)} psi</text>
+            <text x="8" y="54" fill="#9aa8b8" fontSize="8">CHP {fmt(well.chp, 0)} psi  ·  TT {fmt(well.temp, 0)}°C</text>
+          </g>
+
+          <g transform="translate(620,300)">
+            <rect x="0" y="0" width="160" height="72" fill="#121821" stroke="#243040" />
+            <text x="8" y="16" fill="#8b9bb0" fontSize="9">RTU-SCADA / OPC-UA</text>
+            <text x="8" y="36" fill="#34d399" fontSize="11">CONNECTED  124 Hz</text>
+            <text x="8" y="54" fill="#9aa8b8" fontSize="8">TAG COUNT  847  ·  QUALITY GOOD</text>
+          </g>
+        </svg>
+      );
+    }
+
+    function Kpi({ tag, label, value, unit, tone = 'teal', sub }) {
+      const tones = {
+        teal: 'text-teal-300',
+        cyan: 'text-cyan-300',
+        green: 'text-emerald-400',
+        amber: 'text-amber-400',
+        red: 'text-rose-400',
+        white: 'text-slate-100'
+      };
+      return (
+        <div className="panel px-3 py-2 min-w-0">
+          <div className="flex items-center justify-between mb-1">
+            <span className="tag">{tag}</span>
+            <span className="text-[9px] uppercase tracking-widest text-slate-500">{label}</span>
+          </div>
+          <div className={`kpi-val text-xl font-semibold font-mono leading-none ${tones[tone]}`}>{value}<span className="text-[10px] ml-1 text-slate-500 font-medium">{unit}</span></div>
+          {sub && <div className="text-[10px] text-slate-500 mt-1 font-mono">{sub}</div>}
+        </div>
+      );
+    }
+
+    function App() {
+      const [wells, setWells] = useState(INITIAL_WELLS);
+      const [selectedId, setSelectedId] = useState('BGW-004');
+      const [filter, setFilter] = useState('all');
+      const [sort, setSort] = useState('id');
+      const [q, setQ] = useState('');
+      const [now, setNow] = useState(new Date());
+      const [view, setView] = useState('3d');
+      const [chartTab, setChartTab] = useState('stroke');
+      const [sidebar, setSidebar] = useState(false);
+      const [notesOpen, setNotesOpen] = useState(false);
+      const [toasts, setToasts] = useState([]);
+      const [events, setEvents] = useState(INIT_EVENTS);
+      const [ai, setAi] = useState(INIT_AI);
+      const [paused, setPaused] = useState(false);
+      const [spmSet, setSpmSet] = useState(6.2);
+      const [chokeSet, setChokeSet] = useState(24);
+      const [steamSet, setSteamSet] = useState(0);
+      const [freqSet, setFreqSet] = useState(41.2);
+      const [health] = useState(98.6);
+      const [css, setCss] = useState(CSS_STAGES);
+      const [recAccepted, setRecAccepted] = useState(false);
+      const [layers, setLayers] = useState({ steam: true, prod: true, elec: true });
+
+      const well = wells.find(w => w.id === selectedId) || wells[3];
+
+      useEffect(() => {
+        setSpmSet(well.spm);
+        setSteamSet(well.steam);
+      }, [selectedId]);
+
+      useEffect(() => {
+        const t = setInterval(() => setNow(new Date()), 1000);
+        return () => clearInterval(t);
+      }, []);
+
+      useEffect(() => {
+        if (paused) return;
+        const t = setInterval(() => {
+          setWells(ws => ws.map(w => {
+            if (w.status === 'offline') return w;
+            const rate = clamp(jitter(w.rate, w.status === 'critical' ? 3.5 : 1.2), 0, 240);
+            const thp = clamp(jitter(w.thp, 4), 10, 500);
+            const spark = w.spark.slice(1).concat(clamp(w.spark[w.spark.length - 1] + (Math.random() - 0.45) * 8, 5, 95));
+            return {
+              ...w,
+              rate,
+              thp,
+              temp: clamp(jitter(w.temp, 0.6), 30, 190),
+              pumpEff: w.status === 'purging' ? w.pumpEff : clamp(jitter(w.pumpEff, 0.5), 0, 98),
+              fillage: w.spm ? clamp(jitter(w.fillage, 0.7), 20, 99) : 0,
+              spark
+            };
+          }));
+        }, 1600);
+        return () => clearInterval(t);
+      }, [paused]);
+
+      const pushToast = (msg, tone = 'ok') => {
+        const id = Date.now();
+        setToasts(ts => [...ts, { id, msg, tone }]);
+        setTimeout(() => setToasts(ts => ts.filter(x => x.id !== id)), 3200);
+      };
+
+      const fieldRate = wells.reduce((s, w) => s + w.rate, 0);
+      const fieldSteam = wells.reduce((s, w) => s + w.steam, 0);
+      const critN = wells.filter(w => w.status === 'critical').length;
+      const aiN = ai.length;
+
+      const filtered = wells
+        .filter(w => filter === 'all' ? true : w.status === filter)
+        .filter(w => w.id.toLowerCase().includes(q.toLowerCase()) || w.pad.toLowerCase().includes(q.toLowerCase()))
+        .sort((a, b) => {
+          if (sort === 'rate') return b.rate - a.rate;
+          if (sort === 'alerts') return b.alerts - a.alerts;
+          if (sort === 'status') return a.status.localeCompare(b.status);
+          return a.id.localeCompare(b.id);
+        });
+
+      const hours = Array.from({ length: 13 }, (_, i) => `${String(8 + i).padStart(2, '0')}:00`);
+      const strokeSeries = useMemo(() => {
+        const pos = hours.map((_, i) => 72 + Math.sin(i / 1.2) * 68);
+        const load = hours.map((_, i) => 12 + Math.cos(i / 1.4) * 6 + (well.status === 'critical' ? Math.sin(i * 2) * 4 : 0));
+        return [
+          { name: 'Displacement', data: pos, fill: true },
+          { name: 'Load', data: load.map(v => v * 4), fill: false }
+        ];
+      }, [well]);
+      const steamSeries = useMemo(() => ([
+        { name: 'Inject CWE', data: [0, 200, 900, 1600, 1840, 1840, 1200, 400, 0, 0, 0, 0, 0], fill: true },
+        { name: 'Oil', data: [150, 148, 40, 18, 8, 6, 10, 28, 90, 160, 170, 155, 142], fill: true }
+      ]), []);
+      const forecast = useMemo(() => ([
+        { name: 'Actual', data: [128, 132, 136, 140, 142, 141, 143, 142.6, null, null, null, null, null].map(v => v || 0), fill: false },
+        { name: 'AI Base', data: [128, 132, 136, 140, 142, 141, 143, 142.6, 146, 149, 151, 150, 148], fill: true },
+        { name: 'Optimized', data: [128, 132, 136, 140, 142, 141, 143, 142.6, 151, 156, 161, 163, 162], fill: false }
+      ]), []);
+
+      const impactRate = well.rate + (spmSet - well.spm) * 14 + (chokeSet - 24) * 0.8 - (well.status === 'critical' ? 0 : 0);
+      const impactEff = clamp(well.pumpEff + (spmSet - well.spm) * -1.6 + (freqSet - 41.2) * 0.4, 20, 98);
+
+      const clock = now.toLocaleTimeString('en-IN', { hour12: false, timeZone: 'Asia/Kolkata' });
+      const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
+
+      const applyRec = () => {
+        setRecAccepted(true);
+        setSpmSet(6.8);
+        setWells(ws => ws.map(w => w.id === well.id ? { ...w, spm: 6.8, status: 'optimizing' } : w));
+        setEvents(ev => [{ t: clock.slice(0, 8), sev: 'ok', msg: `${well.id} AI recommendation applied — SPM 6.8` }, ...ev]);
+        pushToast('Setpoint written to SCADA (simulated)');
+      };
+
+      const writeScada = () => {
+        setWells(ws => ws.map(w => w.id === well.id ? { ...w, spm: spmSet, steam: steamSet } : w));
+        setEvents(ev => [{ t: clock.slice(0, 8), sev: 'info', msg: `${well.id} surface setpoints downloaded · SPM ${fmt(spmSet, 1)} · choke ${chokeSet}/64` }, ...ev]);
+        pushToast('DOWNLOAD COMPLETE · RTU ACK');
+      };
+
+      const sevColor = s => s === 'HIGH' || s === 'crit' ? '#f43f5e' : s === 'MED' || s === 'warn' ? '#f5a623' : s === 'ok' ? '#34d399' : '#22d3ee';
+
+      return (
+        <div className="dash-shell h-screen flex flex-col bg-void text-slate-200 overflow-hidden">
+          <header className="h-12 shrink-0 flex items-center gap-3 px-3 border-b border-[#243040] bg-[#0c1118]">
+            <button className="xl:hidden p-1 text-slate-400" onClick={() => setSidebar(s => !s)}>
+              <Icon d="M4 6h16M4 12h16M4 18h16" />
+            </button>
+            <div className="flex items-center gap-2 pr-3 border-r border-[#243040]">
+              <div className="w-7 h-7 rounded-sm bg-gradient-to-br from-teal-300 to-cyan-700 flex items-center justify-center font-mono text-[10px] text-black font-bold">DT</div>
+              <div className="leading-tight">
+                <div className="text-[11px] font-semibold tracking-wide text-slate-100">DIGITAL TWIN</div>
+                <div className="text-[9px] font-mono text-teal-400 tracking-wider">WELL-SURFACE OPT</div>
+              </div>
+            </div>
+            <div className="hidden md:flex items-center gap-2 px-2 py-1 panel text-[11px]">
+              <span className="text-slate-500">FIELD</span>
+              <span className="font-semibold">{FIELD.name}</span>
+              <span className="text-slate-600">▾</span>
+              <span className="tag">{FIELD.block}</span>
+            </div>
+            <div className="flex items-center gap-1.5 px-2">
+              <span className="live-dot" />
+              <span className="text-[10px] font-mono tracking-widest text-teal-300">LIVE</span>
+            </div>
+            <div className="flex-1 max-w-md hidden lg:block">
+              <div className="flex items-center gap-2 bg-inset border border-[#243040] rounded px-2 h-7">
+                <Icon d="M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15z" size={13} className="text-slate-500" />
+                <input className="bg-transparent text-[11px] w-full outline-none text-slate-300" placeholder="Search tags, wells, events  /  PIT-004  BGW-  CSS" value={q} onChange={e => setQ(e.target.value)} />
+              </div>
+            </div>
+            <div className="ml-auto flex items-center gap-2 text-[11px]">
+              <div className="hidden md:block font-mono text-slate-300">
+                <span className="text-slate-500 mr-2">{dateStr}</span>{clock} <span className="text-slate-500">IST</span>
+              </div>
+              <div className="relative">
+                <button onClick={() => setNotesOpen(o => !o)} className="relative p-1.5 border border-[#243040] rounded hover:bg-white/5">
+                  <Icon d="M18 8A6 6 0 1 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0" size={14} />
+                  <span className="absolute -top-1 -right-1 bg-amber-500 text-black text-[9px] font-bold px-1 rounded">{aiN}</span>
+                </button>
+                {notesOpen && (
+                  <div className="absolute right-0 top-9 w-80 panel z-50 p-2">
+                    <div className="text-[10px] tracking-widest text-slate-500 mb-2">NOTIFICATIONS</div>
+                    {ai.slice(0, 4).map(a => (
+                      <div key={a.id} className="py-1.5 border-b border-[#243040] text-[11px]">
+                        <span className="font-mono mr-2" style={{ color: sevColor(a.sev) }}>{a.sev}</span>{a.title}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="hidden sm:flex items-center gap-1 px-2 py-1 border border-[#243040] rounded">
+                <span className="text-slate-500 text-[10px]">AI</span>
+                <span className="font-mono text-amber-400">{aiN}</span>
+              </div>
+              <div className="hidden md:flex items-center gap-1 px-2 py-1 border border-[#243040] rounded">
+                <span className="text-slate-500 text-[10px]">HEALTH</span>
+                <span className="font-mono text-emerald-400">{fmt(health, 1)}%</span>
+              </div>
+              <div className="hidden lg:flex items-center gap-2 pl-2">
+                <div className="w-6 h-6 rounded-sm bg-[#1a2836] border border-teal-700/50 flex items-center justify-center text-[9px] font-bold text-teal-300">PN</div>
+                <div className="leading-tight">
+                  <div className="text-[11px]">Priya Nair</div>
+                  <div className="text-[9px] text-slate-500">Shift Lead · Console 2</div>
+                </div>
+              </div>
+              <button className="p-1.5 border border-[#243040] rounded hover:bg-white/5" title="Settings">
+                <Icon d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.3.6.9 1 1.5 1.1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" size={14} />
+              </button>
+              <div className="hidden xl:flex items-center gap-2 pl-2 border-l border-[#243040]">
+                <span className="text-[9px] font-mono tracking-wider text-emerald-400">SCADA CONNECTED</span>
+                <span className="text-slate-600">|</span>
+                <span className="text-[9px] font-mono tracking-wider text-cyan-400">DATA STREAM ACTIVE</span>
+              </div>
+            </div>
+          </header>
+
+          <div className="flex-1 min-h-0 flex relative">
+            <aside className={`${sidebar ? 'absolute z-40 inset-y-0 left-0 shadow-2xl' : 'hidden'} xl:flex xl:relative flex-col w-72 shrink-0 border-r border-[#243040] bg-[#0c1118]`}>
+              <div className="panel-head">
+                <h3>Well Inventory</h3>
+                <span className="text-[10px] font-mono text-slate-500">{filtered.length}/{wells.length}</span>
+              </div>
+              <div className="p-2 space-y-2">
+                <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search wells / pads" className="w-full bg-inset border border-[#243040] rounded px-2 h-7 text-[11px] outline-none" />
+                <div className="flex flex-wrap gap-1">
+                  {['all', 'active', 'optimizing', 'purging', 'critical', 'offline'].map(s => (
+                    <button key={s} onClick={() => setFilter(s)} className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${filter === s ? 'border-teal-400 text-teal-300' : 'border-[#243040] text-slate-500'}`}>{s}</button>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-slate-500">
+                  <span>SORT</span>
+                  <select value={sort} onChange={e => setSort(e.target.value)} className="bg-inset border border-[#243040] rounded text-[10px] px-1 py-0.5">
+                    <option value="id">Well ID</option>
+                    <option value="rate">Production</option>
+                    <option value="status">Status</option>
+                    <option value="alerts">Alerts</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto hide-scroll px-2 pb-2 space-y-1.5">
+                {filtered.map(w => {
+                  const st = STATUS[w.status];
+                  return (
+                    <button key={w.id} onClick={() => { setSelectedId(w.id); setSidebar(false); }} className={`well-card w-full text-left panel p-2 ${selectedId === w.id ? 'active' : ''}`}>
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-[12px] font-semibold">{w.id}</span>
+                        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded" style={{ color: st.color, background: st.bg }}>{st.label}</span>
+                      </div>
+                      <div className="mt-1 grid grid-cols-4 gap-1 text-[9px] font-mono text-slate-400">
+                        <div>η {fmt(w.pumpEff, 0)}%</div>
+                        <div className="text-teal-300">{fmt(w.rate, 0)} bbl</div>
+                        <div>{fmt(w.thp, 0)} psi</div>
+                        <div>{fmt(w.temp, 0)}°C</div>
+                      </div>
+                      <div className="flex items-center justify-between mt-1">
+                        <Sparkline data={w.spark} color={st.color} />
+                        {w.alerts > 0 && <span className="text-[9px] text-amber-400 font-mono">▲ {w.alerts}</span>}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </aside>
+
+            <main className="flex-1 min-w-0 overflow-auto xl:overflow-hidden flex flex-col">
+              <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-12 gap-2 p-2">
+                <section className="xl:col-span-8 flex flex-col gap-2 min-h-0">
+                  <div className="panel flex-1 min-h-[300px] flex flex-col overflow-hidden">
+                    <div className="panel-head">
+                      <h3>Live Well Digital Twin</h3>
+                      <div className="flex items-center gap-2">
+                        <span className="tag">{well.id}</span>
+                        <span className="tag">{well.pad}</span>
+                        <span className="tag">{well.cycle} D{well.day}</span>
+                        {['3d', 'pid'].map(v => (
+                          <button key={v} onClick={() => setView(v)} className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${view === v ? 'border-teal-400 text-teal-300' : 'border-[#243040] text-slate-500'}`}>{v === '3d' ? '3D TWIN' : 'P&ID'}</button>
+                        ))}
+                        <button onClick={() => setPaused(p => !p)} className="text-[9px] font-mono px-1.5 py-0.5 rounded border border-[#243040] text-slate-400">{paused ? 'RESUME' : 'PAUSE'}</button>
+                      </div>
+                    </div>
+                    <div className="relative flex-1 min-h-[260px] scanline overflow-hidden">
+                      <DigitalTwin well={well} view={view} />
+                      <div className="absolute top-2 left-2 flex gap-1">
+                        {Object.keys(layers).map(k => (
+                          <button key={k} onClick={() => setLayers(l => ({ ...l, [k]: !l[k] }))} className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${layers[k] ? 'border-cyan-500 text-cyan-300 bg-cyan-500/10' : 'border-[#243040] text-slate-500'}`}>{k.toUpperCase()}</button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+                    <Kpi tag="QOIL" label="Oil Rate" value={fmt(well.rate, 1)} unit="bbl/d" tone="teal" sub={`WC ${fmt(well.wc, 0)}%`} />
+                    <Kpi tag="THP" label="Tubing Head" value={fmt(well.thp, 0)} unit="psi" tone={well.thp < 120 ? 'red' : 'cyan'} sub={`CHP ${fmt(well.chp, 0)} psi`} />
+                    <Kpi tag="TT-WH" label="Wellhead T" value={fmt(well.temp, 0)} unit="°C" tone={well.temp > 130 ? 'amber' : 'white'} />
+                    <Kpi tag="PEFF" label="Pump η" value={fmt(well.pumpEff, 1)} unit="%" tone={well.pumpEff < 50 ? 'red' : 'green'} sub={`Fill ${fmt(well.fillage, 0)}%`} />
+                    <Kpi tag="SPM" label="Strokes" value={fmt(well.spm, 1)} unit="/min" tone="cyan" sub={`${well.stroke} in stroke`} />
+                    <Kpi tag="STEAM" label="Inject" value={fmt(well.steam, 0)} unit="CWE" tone="amber" sub={well.cycle} />
+                  </div>
+                  <div className="panel h-[200px] flex flex-col">
+                    <div className="panel-head">
+                      <h3>Predictive Analytics Workspace</h3>
+                      <div className="flex gap-1">
+                        {[['stroke', 'STROKE / LOAD'], ['dyno', 'DYNAMOMETER'], ['steam', 'STEAM / CSS'], ['forecast', 'PRODUCTION FCST']].map(([k, l]) => (
+                          <button key={k} onClick={() => setChartTab(k)} className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${chartTab === k ? 'border-teal-400 text-teal-300' : 'border-[#243040] text-slate-500'}`}>{l}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex-1 min-h-0 px-1">
+                      {chartTab === 'stroke' && <LineChart series={strokeSeries} labels={hours} colors={['#2ee6c7', '#f5a623']} />}
+                      {chartTab === 'dyno' && <DynoCard well={well} />}
+                      {chartTab === 'steam' && <LineChart series={steamSeries} labels={['D0','D2','D4','D6','D8','D10','D12','D14','D16','D18','D20','D22','D24']} colors={['#fb923c', '#2ee6c7']} />}
+                      {chartTab === 'forecast' && <LineChart series={forecast} labels={hours} colors={['#94a3b8', '#22d3ee', '#34d399']} />}
+                    </div>
+                  </div>
+                </section>
+
+                <section className="xl:col-span-4 flex flex-col gap-2 min-h-0 overflow-auto">
+                  <div className="panel">
+                    <div className="panel-head">
+                      <h3>AI Insights · Anomaly Detection</h3>
+                      <span className="live-dot amber" />
+                    </div>
+                    <div className="max-h-52 overflow-y-auto">
+                      {ai.map(a => (
+                        <div key={a.id} className="px-2 py-2 border-b border-[#243040]">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] font-mono font-semibold px-1.5 rounded" style={{ color: sevColor(a.sev), background: sevColor(a.sev) + '22' }}>{a.sev}</span>
+                            <span className="text-[9px] font-mono text-slate-500">{a.well} · {a.ts} · {a.conf}%</span>
+                          </div>
+                          <div className="text-[12px] mt-0.5 text-slate-200">{a.title}</div>
+                          <div className="text-[10px] text-slate-500 mt-0.5 leading-snug">{a.detail}</div>
+                          <div className="flex gap-1 mt-1.5">
+                            <button onClick={() => { setSelectedId(a.well); pushToast('Well focused from insight'); }} className="text-[9px] font-mono px-2 py-0.5 border border-cyan-700 text-cyan-300 rounded">FOCUS</button>
+                            <button onClick={() => { setAi(x => x.filter(i => i.id !== a.id)); pushToast('Insight acknowledged'); }} className="text-[9px] font-mono px-2 py-0.5 border border-[#243040] text-slate-400 rounded">ACK</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="panel p-2">
+                    <div className="panel-head -mx-2 -mt-2 mb-2">
+                      <h3>Optimization Control Panel</h3>
+                      <span className="text-[9px] font-mono text-slate-500">SIMULATED WRITE</span>
+                    </div>
+                    <label className="text-[10px] text-slate-400 flex justify-between">SPM setpoint <span className="font-mono text-teal-300">{fmt(spmSet, 1)}</span></label>
+                    <input type="range" min="0" max="10" step="0.1" value={spmSet} onChange={e => setSpmSet(+e.target.value)} />
+                    <label className="text-[10px] text-slate-400 flex justify-between mt-2">Choke /64" <span className="font-mono text-teal-300">{chokeSet}</span></label>
+                    <input type="range" min="8" max="48" step="1" value={chokeSet} onChange={e => setChokeSet(+e.target.value)} />
+                    <label className="text-[10px] text-slate-400 flex justify-between mt-2">Steam CWE bbl/d <span className="font-mono text-amber-400">{fmt(steamSet, 0)}</span></label>
+                    <input type="range" min="0" max="2500" step="10" value={steamSet} onChange={e => setSteamSet(+e.target.value)} />
+                    <label className="text-[10px] text-slate-400 flex justify-between mt-2">PCP / VFD Hz <span className="font-mono text-cyan-300">{fmt(freqSet, 1)}</span></label>
+                    <input type="range" min="20" max="60" step="0.1" value={freqSet} onChange={e => setFreqSet(+e.target.value)} />
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] font-mono">
+                      <div className="bg-inset border border-[#243040] rounded p-1.5">Δ Q <span className="text-teal-300">{impactRate - well.rate >= 0 ? '+' : ''}{fmt(impactRate - well.rate, 1)} bbl/d</span></div>
+                      <div className="bg-inset border border-[#243040] rounded p-1.5">η pred <span className="text-emerald-400">{fmt(impactEff, 1)}%</span></div>
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      <button onClick={writeScada} className="flex-1 text-[10px] font-mono tracking-wider py-1.5 rounded bg-teal-400/20 border border-teal-400 text-teal-200 hover:bg-teal-400/30">WRITE SETPOINTS</button>
+                      <button onClick={() => { setSpmSet(well.spm); setSteamSet(well.steam); setChokeSet(24); setFreqSet(41.2); }} className="text-[10px] font-mono px-2 py-1.5 rounded border border-[#243040] text-slate-400">RESET</button>
+                    </div>
+                  </div>
+
+                  <div className="panel p-2 border-teal-700/40" style={{ boxShadow: '0 0 24px rgba(46,230,199,0.08)' }}>
+                    <div className="flex items-center justify-between mb-1">
+                      <h3 className="text-[10px] tracking-[0.16em] uppercase text-teal-300 font-semibold m-0">AI Recommendation Engine</h3>
+                      <span className="text-[9px] font-mono text-slate-500">CONF 86%</span>
+                    </div>
+                    <p className="text-[12px] leading-snug text-slate-200 m-0">
+                      Increase <span className="font-mono text-teal-300">BGW-004</span> SPM from 6.2 → <span className="font-mono text-teal-300">6.8</span>. Hold choke 24/64. Do not inject steam this cycle.
+                    </p>
+                    <div className="grid grid-cols-3 gap-1 mt-2 text-center">
+                      <div className="bg-inset rounded p-1"><div className="text-[9px] text-slate-500">OIL</div><div className="font-mono text-teal-300 text-[12px]">+8.4 bbl/d</div></div>
+                      <div className="bg-inset rounded p-1"><div className="text-[9px] text-slate-500">FILLAGE</div><div className="font-mono text-emerald-400 text-[12px]">+6.0%</div></div>
+                      <div className="bg-inset rounded p-1"><div className="text-[9px] text-slate-500">SOR</div><div className="font-mono text-amber-400 text-[12px]">0.00</div></div>
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      <button disabled={recAccepted} onClick={applyRec} className="flex-1 text-[10px] font-mono py-1.5 rounded bg-teal-400 text-black font-semibold disabled:opacity-40">{recAccepted ? 'APPLIED' : 'ACCEPT & WRITE'}</button>
+                      <button onClick={() => pushToast('Recommendation snoozed 4h', 'warn')} className="text-[10px] font-mono px-2 rounded border border-[#243040] text-slate-400">SNOOZE</button>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="xl:col-span-4 panel flex flex-col min-h-[160px]">
+                  <div className="panel-head">
+                    <h3>CSS Steam Stimulation Scheduler</h3>
+                    <span className="text-[9px] font-mono text-slate-500">CYCLIC STEAM  ·  40-DAY DESIGN</span>
+                  </div>
+                  <div className="p-2 flex-1">
+                    <div className="flex text-[8px] font-mono text-slate-500 mb-1">
+                      <span className="w-16">WELL</span>
+                      <span className="flex-1 flex justify-between px-1"><span>INJECT</span><span>SOAK</span><span>PRODUCE</span></span>
+                    </div>
+                    {css.map((c, i) => (
+                      <div key={c.well} className="flex items-center gap-2 mb-1.5">
+                        <button onClick={() => setSelectedId(c.well)} className="w-16 text-left text-[10px] font-mono text-slate-300">{c.well}</button>
+                        <div className="flex-1 h-4 bg-inset rounded-sm overflow-hidden relative cursor-pointer" onClick={() => {
+                          setCss(cs => cs.map((x, j) => j === i ? { ...x, progress: clamp(x.progress + 0.05, 0, 1) } : x));
+                          pushToast(`${c.well} CSS stage nudged`);
+                        }}>
+                          <div className="absolute inset-y-0 left-0" style={{ width: `${c.progress * 100}%`, background: c.color, opacity: 0.85 }} />
+                          <span className="absolute inset-0 flex items-center justify-center text-[8px] font-mono tracking-wider">{c.stage} {Math.round(c.progress * 100)}%</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="xl:col-span-4 panel flex flex-col min-h-[160px]">
+                  <div className="panel-head">
+                    <h3>Field Overview · Baghewala</h3>
+                    <span className="text-[9px] font-mono text-teal-300">{fmt(fieldRate, 0)} bbl/d  ·  {fmt(fieldSteam, 0)} CWE</span>
+                  </div>
+                  <div className="relative flex-1 min-h-[140px] grid-bg m-2 border border-[#243040] rounded">
+                    <svg viewBox="0 0 100 80" className="absolute inset-0 w-full h-full">
+                      <text x="4" y="8" fill="#6b7c90" fontSize="3.2" fontFamily="IBM Plex Mono">N</text>
+                      <path d="M4 12 L4 6 L2.5 8 M4 6 L5.5 8" stroke="#6b7c90" fill="none" strokeWidth="0.4" />
+                      <path d="M8 20 C 30 10, 55 18, 92 22 S 90 70, 20 72 Z" fill="rgba(46,230,199,0.04)" stroke="#1a8f7c" strokeWidth="0.4" />
+                      {wells.map(w => (
+                        <g key={w.id} onClick={() => setSelectedId(w.id)} className="cursor-pointer">
+                          <circle cx={w.x} cy={w.y} r={selectedId === w.id ? 2.6 : 1.7} fill={STATUS[w.status].color} stroke="#07090c" strokeWidth="0.3" />
+                          <text x={w.x + 2.2} y={w.y + 1} fill="#9aa8b8" fontSize="2.4" fontFamily="IBM Plex Mono">{w.id.slice(4)}</text>
+                        </g>
+                      ))}
+                      <text x="4" y="76" fill="#4b5c70" fontSize="2.6" fontFamily="IBM Plex Mono">THAR MARGIN  ·  NAGAUR SUB-BASIN  ·  HEAVY OIL 14–18° API</text>
+                    </svg>
+                  </div>
+                  <div className="px-2 pb-2 grid grid-cols-4 gap-1 text-center text-[9px] font-mono">
+                    <div className="bg-inset rounded py-1">WELLS<br/><span className="text-slate-200">{wells.length}</span></div>
+                    <div className="bg-inset rounded py-1">CRIT<br/><span className="text-rose-400">{critN}</span></div>
+                    <div className="bg-inset rounded py-1">TARGET<br/><span className="text-slate-200">{FIELD.target}</span></div>
+                    <div className="bg-inset rounded py-1">ATTAIN<br/><span className="text-teal-300">{fmt(fieldRate / FIELD.target * 100, 0)}%</span></div>
+                  </div>
+                </section>
+
+                <section className="xl:col-span-4 panel flex flex-col min-h-[160px]">
+                  <div className="panel-head">
+                    <h3>Operations Timeline</h3>
+                    <span className="live-dot" />
+                  </div>
+                  <div className="flex-1 overflow-y-auto px-2 py-1">
+                    {events.map((e, i) => (
+                      <div key={i} className="flex gap-2 py-1 border-b border-[#1a2430] text-[11px]">
+                        <span className="font-mono text-slate-500 w-14 shrink-0">{e.t}</span>
+                        <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: sevColor(e.sev) }} />
+                        <span className="text-slate-300">{e.msg}</span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              </div>
+            </main>
+          </div>
+
+          <footer className="h-8 shrink-0 border-t border-[#243040] bg-[#0c1118] flex items-center gap-4 px-3 text-[10px] font-mono text-slate-500 overflow-x-auto">
+            <span className="text-teal-400">TELEMETRY 124 Hz</span>
+            <span>SENSORS 847/852 OK</span>
+            <span className="text-emerald-400">HISTORIAN CONNECTED</span>
+            <span>OPC-UA</span>
+            <span>MQTT / Sparkplug B</span>
+            <span>PI AF · Baghewala_Wells</span>
+            <span className="ml-auto text-slate-400">UPTIME 47d 12h 08m</span>
+            <span>PKT LOSS 0.02%</span>
+            <span>RENDER {paused ? 'HOLD' : 'LIVE'}</span>
+            <span className="text-slate-600">DTW-SOP v4.7.1 · CLASSIFICATION: INTERNAL · ENG DEMO</span>
+          </footer>
+
+          <div className="fixed right-4 bottom-12 z-50 space-y-2">
+            {toasts.map(t => (
+              <div key={t.id} className="toast panel px-3 py-2 text-[11px] font-mono border-teal-700 text-teal-200">{t.msg}</div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
