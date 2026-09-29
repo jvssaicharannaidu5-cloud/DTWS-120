@@ -1,158 +1,344 @@
 /**
  * server/index.js
- * Express REST API for DTW-SOP Email Automation Module.
- * Runs on Port 3001 and handles email triggers, settings, logs, and retries.
+ * DTW-SOP Backend
+ * Email Automation + Voice Agent API
  */
 
-import express from 'express';
-import cors from 'cors';
-import dotenv from 'dotenv';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { emailService } from './emailService.js';
-import { alertAutomationService } from './alertAutomationService.js';
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+
+import { emailService } from "./emailService.js";
+import { alertAutomationService } from "./alertAutomationService.js";
 
 dotenv.config();
 
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 const app = express();
-const PORT = process.env.PORT || 3001;
 
-app.use(cors());
-app.use(express.json());
+/* -------------------------------------------------------
+   CONFIGURATION
+------------------------------------------------------- */
 
-// Request logger (does not log sensitive credentials)
+const PORT = Number(process.env.PORT) || 3001;
+const HOST = "0.0.0.0";
+
+/* -------------------------------------------------------
+   MIDDLEWARE
+------------------------------------------------------- */
+
+app.use(
+  cors({
+    origin: process.env.FRONTEND_URL
+      ? process.env.FRONTEND_URL.split(",").map((url) => url.trim())
+      : true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true }));
+
+/* -------------------------------------------------------
+   REQUEST LOGGER
+------------------------------------------------------- */
+
 app.use((req, res, next) => {
-  if (req.path.startsWith('/api/email')) {
-    console.log(`[API ${req.method}] ${req.path}`);
+  if (req.path.startsWith("/api/")) {
+    console.log(`[API] ${req.method} ${req.path}`);
   }
+
   next();
 });
 
-/**
- * GET /api/email/status
- * Returns current status of email transport and counters
- */
-app.get('/api/email/status', (req, res) => {
-  const status = emailService.getStatus();
-  const settings = alertAutomationService.getSettings();
+/* =======================================================
+   HEALTH CHECK
+======================================================= */
+
+app.get("/", (req, res) => {
   res.json({
-    ...status,
-    settings
+    service: "DTW-SOP Backend",
+    status: "online",
+    message: "Digital Twin Well-to-Surface Optimization API",
+    timestamp: new Date().toISOString(),
   });
 });
 
-/**
- * GET /api/email/settings
- * Returns user-configurable email automation settings
- */
-app.get('/api/email/settings', (req, res) => {
-  res.json(alertAutomationService.getSettings());
+app.get("/api/health", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    service: "dtw-sop-backend",
+    timestamp: new Date().toISOString(),
+  });
 });
 
-/**
- * POST /api/email/settings
- * Updates automation toggles and target recipient
- */
-app.post('/api/email/settings', (req, res) => {
+/* =======================================================
+   EMAIL STATUS
+======================================================= */
+
+app.get("/api/email/status", (req, res) => {
   try {
-    const updated = alertAutomationService.updateSettings(req.body);
-    res.json({ success: true, settings: updated });
-  } catch (err) {
-    res.status(400).json({ success: false, error: err.message });
+    const status = emailService.getStatus();
+    const settings = alertAutomationService.getSettings();
+
+    res.status(200).json({
+      success: true,
+      ...status,
+      settings,
+    });
+  } catch (error) {
+    console.error("Email status error:", error);
+
+    res.status(500).json({
+      success: false,
+      error: "Unable to retrieve email status",
+    });
   }
 });
 
-/**
- * POST /api/email/send-test
- * Sends a test verification email
- */
-app.post('/api/email/send-test', async (req, res) => {
+/* =======================================================
+   EMAIL SETTINGS
+======================================================= */
+
+app.get("/api/email/settings", (req, res) => {
+  try {
+    res.status(200).json(
+      alertAutomationService.getSettings()
+    );
+  } catch (error) {
+    console.error("Email settings error:", error);
+
+    res.status(500).json({
+      success: false,
+      error: "Unable to retrieve email settings",
+    });
+  }
+});
+
+app.post("/api/email/settings", (req, res) => {
+  try {
+    const updated =
+      alertAutomationService.updateSettings(req.body || {});
+
+    res.status(200).json({
+      success: true,
+      settings: updated,
+    });
+  } catch (error) {
+    console.error("Update settings error:", error);
+
+    res.status(400).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+/* =======================================================
+   TEST EMAIL
+======================================================= */
+
+app.post("/api/email/send-test", async (req, res) => {
   try {
     const { targetEmail, recipient } = req.body || {};
-    const result = await alertAutomationService.sendTestEmail(targetEmail || recipient);
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+
+    const email = targetEmail || recipient;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: "targetEmail or recipient is required",
+      });
+    }
+
+    const result =
+      await alertAutomationService.sendTestEmail(email);
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Test email error:", error);
+
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
   }
 });
 
-/**
- * POST /api/email/trigger-alert
- * Evaluates an operational event and dispatches email if permitted
- */
-app.post('/api/email/trigger-alert', async (req, res) => {
+/* =======================================================
+   TRIGGER ALERT
+======================================================= */
+
+app.post("/api/email/trigger-alert", async (req, res) => {
   try {
     const eventPayload = req.body || {};
-    const result = await alertAutomationService.processEvent(eventPayload);
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+
+    const result =
+      await alertAutomationService.processEvent(eventPayload);
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Alert trigger error:", error);
+
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
   }
 });
 
-/**
- * POST /api/email/send-digest
- * Dispatches a Daily Field Summary digest email
- */
-app.post('/api/email/send-digest', async (req, res) => {
+/* =======================================================
+   DAILY DIGEST
+======================================================= */
+
+app.post("/api/email/send-digest", async (req, res) => {
   try {
     const digestData = req.body || {};
-    const result = await alertAutomationService.sendDailyDigest(digestData);
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+
+    const result =
+      await alertAutomationService.sendDailyDigest(digestData);
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Digest error:", error);
+
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
   }
 });
 
-/**
- * GET /api/email/logs
- * Retrieves the recent email outbox and delivery audit logs
- */
-app.get('/api/email/logs', (req, res) => {
-  res.json(emailService.getLogs());
+/* =======================================================
+   EMAIL LOGS
+======================================================= */
+
+app.get("/api/email/logs", (req, res) => {
+  try {
+    res.status(200).json(emailService.getLogs());
+  } catch (error) {
+    console.error("Email logs error:", error);
+
+    res.status(500).json({
+      success: false,
+      error: "Unable to retrieve email logs",
+    });
+  }
 });
 
-/**
- * POST /api/email/retry/:id
- * Retries a failed or simulated email log entry
- */
-app.post('/api/email/retry/:id', async (req, res) => {
+/* =======================================================
+   RETRY EMAIL
+======================================================= */
+
+app.post("/api/email/retry/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await emailService.retryEmail(id);
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+
+    const result =
+      await emailService.retryEmail(id);
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Retry email error:", error);
+
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
   }
 });
 
-/**
- * GET /api/voice/config
- * Returns public voice agent configuration for Arise Millis Assistant
- */
-app.get('/api/voice/config', (req, res) => {
-  res.json({
-    agentId: process.env.MILLIS_AGENT_ID || '-P2gcPI5t_7Djy8toIcp',
-    publicKey: process.env.MILLIS_PUBLIC_KEY || '',
-    serviceMode: process.env.MILLIS_PUBLIC_KEY ? 'live' : 'interactive_hybrid',
-    status: 'READY'
+/* =======================================================
+   MILLIS VOICE AGENT CONFIG
+======================================================= */
+
+app.get("/api/voice/config", (req, res) => {
+  const agentId = process.env.MILLIS_AGENT_ID;
+
+  const publicKey = process.env.MILLIS_PUBLIC_KEY;
+
+  res.status(200).json({
+    agentId: agentId || "",
+    publicKey: publicKey || "",
+    serviceMode: publicKey ? "live" : "interactive_hybrid",
+    status: agentId ? "READY" : "NOT_CONFIGURED",
   });
 });
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', service: 'dtw-sop-backend', timestamp: new Date().toISOString() });
+/* =======================================================
+   404 HANDLER
+======================================================= */
+
+app.use("/api", (req, res) => {
+  res.status(404).json({
+    success: false,
+    error: "API endpoint not found",
+    path: req.originalUrl,
+  });
 });
 
-app.listen(PORT, () => {
-  console.log(`=======================================================`);
-  console.log(`[DTW-SOP Backend] Email Automation Service running`);
-  console.log(`[Port] ${PORT}`);
-  console.log(`[Mode] ${process.env.EMAIL_SERVICE_MODE || 'simulation'}`);
-  console.log(`[Target Email] ${process.env.NOTIFICATION_EMAIL || 'jvssaicharannaidu5@gmail.com'}`);
-  console.log(`=======================================================`);
+/* =======================================================
+   GLOBAL ERROR HANDLER
+======================================================= */
+
+app.use((err, req, res, next) => {
+  console.error("Unhandled server error:", err);
+
+  res.status(500).json({
+    success: false,
+    error: "Internal server error",
+  });
 });
+
+/* =======================================================
+   SERVER START
+======================================================= */
+
+/*
+ * IMPORTANT:
+ * Only start the HTTP server when running directly.
+ *
+ * This allows the same file to work with:
+ * - Render
+ * - Railway
+ * - localhost
+ * - Vercel/serverless adapters
+ */
+
+const isProductionServer =
+  process.env.NODE_ENV !== "test" &&
+  !process.env.VERCEL;
+
+if (isProductionServer) {
+  app.listen(PORT, HOST, () => {
+    console.log("==================================================");
+    console.log(" DTW-SOP Backend");
+    console.log(" Digital Twin Well-to-Surface Optimization");
+    console.log("==================================================");
+    console.log(`Server: http://${HOST}:${PORT}`);
+    console.log(`Port: ${PORT}`);
+    console.log(
+      `Email Mode: ${process.env.EMAIL_SERVICE_MODE || "simulation"
+      }`
+    );
+    console.log(
+      `Notification Email: ${process.env.NOTIFICATION_EMAIL
+        ? "configured"
+        : "not configured"
+      }`
+    );
+    console.log(
+      `Millis Agent: ${process.env.MILLIS_AGENT_ID
+        ? "configured"
+        : "not configured"
+      }`
+    );
+    console.log("==================================================");
+  });
+}
+
+/* -------------------------------------------------------
+   EXPORT APP
+------------------------------------------------------- */
+
+export default app;
